@@ -2,18 +2,12 @@
 
 import os
 import sys
+import time
 import shutil
+import docker
 from astropy.io import fits
 from argparse import ArgumentParser
 from prefect import task, flow, get_run_logger
-from prefect_docker.images import pull_docker_image
-from prefect_docker.containers import (
-    create_docker_container,
-    start_docker_container,
-    get_docker_container_logs,
-    stop_docker_container,
-    remove_docker_container
-)
 from src.pixel_region import wallaby_pixel_region
 
 
@@ -29,14 +23,26 @@ def pixel_region(hdu, size, logger):
 
 @task
 def miriad(image, volume, cmd, logger):
-    pull_docker_image(image)
-    container = create_docker_container(image, command=cmd, volumes=volume)
-    logger.info(container)
-    start_docker_container(container_id=container.id)
-    logs = get_docker_container_logs(container_id=container.id)
-    logger.info(logs)
-    # stop_docker_container(container_id=container.id)
-    # remove_docker_container(container_id=container.id)
+    try:
+        client = docker.from_env()
+        client.images.pull(image)
+        container = client.containers.run(image, cmd, volumes=volume, detach=True)
+        container_id = container.id
+        logs = None
+        while (container.status != 'exited'):
+            container = client.containers.get(container_id)
+            logs_upd = container.logs()
+            if logs_upd != logs:
+                logger.info(logs_upd)
+                logs = logs_upd
+            time.sleep(10)
+        logger.info('Miriad completed')
+    except Exception as e:
+        logger.error(e)
+        return
+    finally:
+        client.containers.prune()
+        logger.info('Containers pruned')
     return
 
 

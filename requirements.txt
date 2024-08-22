@@ -1,5 +1,5 @@
 astroquery>=0.4.7
 astropy
 numpy
+docker
 prefect
-prefect-docker
