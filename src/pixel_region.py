@@ -17,11 +17,9 @@ def wallaby_pixel_region(hdu, size):
     c_ra_pix = hdu.header['NAXIS1'] // 2
     c_dec_pix = hdu.header['NAXIS2'] // 2
     centre = SkyCoord.from_pixel(c_ra_pix, c_dec_pix, wcs=w)
-    print(centre)
     dr = size // 2 * u.arcmin
     ra_max, dec_max = SkyCoord(ra=centre.ra - dr, dec=centre.dec + dr).to_pixel(wcs=w)
     ra_min, dec_min = SkyCoord(ra=centre.ra + dr, dec=centre.dec - dr).to_pixel(wcs=w)
-    print(f'region=boxes({int(ra_min)},{int(dec_min)},{int(ra_max)},{int(dec_max)})')
     return int(ra_min), int(dec_min), int(ra_max), int(dec_max)
 
 
