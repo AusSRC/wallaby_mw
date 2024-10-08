@@ -12,6 +12,7 @@ Compilation: gcc -O3 -o velo_range velo_range.c -lm
 import sys
 import math
 import numpy as np
+from prefect import task
 
 
 VDEV = 70.0
@@ -60,6 +61,7 @@ def scale_height(r):
     return ZDISC * (r / RSUN)
 
 
+@task(name='velo_range')
 def velocity_range(ra, dec):
     """Main function of original velo_range.c code converted into a Python function for use in pipeline.
 
@@ -108,12 +110,13 @@ def velocity_range(ra, dec):
     return (v1, v2)
 
 
-def main():
-    if len(sys.argv) != 3:
+@task(name='velo_range_main')
+def main(argv):
+    if len(argv) != 2:
         print("Usage: ./velo_range <ra> <dec>\n")
 
-    ra = float(sys.argv[1])
-    dec = float(sys.argv[2])
+    ra = float(sys.argv[0])
+    dec = float(sys.argv[1])
     v1, v2 = velocity_range(ra, dec)
 
     # Convert to frequency
@@ -122,8 +125,10 @@ def main():
 
     print(f"{v1}\t{v2}")
     print(f"{f2}\t{f1}")
-    return
+    return (v1, v2)
 
 
 if __name__ == '__main__':
-    main()
+    argv = sys.argv[1:]
+    print(argv)
+    main(argv)

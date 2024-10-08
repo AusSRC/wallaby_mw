@@ -9,26 +9,23 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.vizier import Vizier
+from prefect import task
 
 
-logging.basicConfig(level=logging.INFO)
+URL = 'https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
+CATALOG = 'J/A+A/594/A116/cubes_eq'
 
 
 def parse_args(argv):
     parser = ArgumentParser()
-    parser.add_argument('-f', '--file', help='Image cube file for reference centre coordinate', required=True)
-    parser.add_argument(
-        '-r', '--radius',
-        help='Search width [deg] from the reference centre coordinate to search for HI4PI file',
-        required=False,
-        default=20.0
-    )
-    parser.add_argument('-u', '--url', required=False, default='https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/')
-    parser.add_argument('-c', '--catalog', required=False, default='J/A+A/594/A116/cubes_eq')
+    parser.add_argument('--ra', help='RA centre coordinate', required=True)
+    parser.add_argument('--dec', help='Declination centre coordinate', required=True)
+    parser.add_argument('-r', '--radius', required=False, default=20.0)
     args = parser.parse_args(argv)
     return args
 
 
+@task(name='hi4pi_download')
 def download_hi4pi(ra, dec, width, url, catalog, output_dir='./'):
     files = []
     centre = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
@@ -51,20 +48,17 @@ def download_hi4pi(ra, dec, width, url, catalog, output_dir='./'):
     return files
 
 
+@task(name='hi4pi_download_main')
 def main(argv):
     args = parse_args(argv)
-    assert os.path.exists(args.file), f'File does not exist {args.file}'
-    with fits.open(args.file) as hdul:
-        header = hdul[0].header
-        c_ra = header['CRVAL1'] + header['CRPIX1'] * header['CDELT1']
-        c_dec = header['CRVAL2'] + header['CRPIX2'] * header['CDELT2']
-        logging.info(f'Centre coordinates for image: ({round(c_ra, 2)}, {round(c_dec, 2)})')
+    logging.info(f'Centre coordinates for image: ({round(args.ra, 2)}, {round(args.dec, 2)})')
     output_dir = os.path.dirname(args.file)
-    files = download_hi4pi(c_ra, c_dec, args.radius, args.url, args.catalog, output_dir)
+    files = download_hi4pi(args.ra, args.dec, args.radius, URL, CATALOG, output_dir)
     logging.info(files)
     return files
 
 
 if __name__ == '__main__':
     argv = sys.argv[1:]
+    logging.debug(f'Args: {argv}')
     main(argv)

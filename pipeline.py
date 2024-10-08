@@ -1,24 +1,32 @@
 #!/usr/bin/env python3
 
+'''
+Run flow
+    1. download hi4pi (block 1)
+    2. subfits        (block 1)
+    3. velorange      (block 1)
+    4. pixel_region   (block 1)
+    5. miriad script  (block 2)
+    6. source finding (block 3, parallel)
+    7. sofiax         (block 4)
+'''
+
 import os
 import sys
 import time
 import shutil
 import docker
+import asyncio
 from astropy.io import fits
 from argparse import ArgumentParser
+from configparser import ConfigParser
 from prefect import task, flow, get_run_logger
-from src.pixel_region import wallaby_pixel_region
+from src import pixel_region
+from src import download_hi4pi
+from src import velo_range
 
 
 MIRIAD_CMD = "$1 $2 $3 $4 $5"
-
-
-@task
-def pixel_region(hdu, size, logger):
-    region = wallaby_pixel_region(hdu, size)
-    logger.info(region)
-    return region
 
 
 @task
@@ -46,50 +54,61 @@ def miriad(image, volume, cmd, logger):
     return
 
 
-def parse_args(argv):
-    parser = ArgumentParser()
-    parser.add_argument('--directory', type=str, required=True, help='Working directory containing input files')
-    parser.add_argument('--wallaby_image', type=str, required=True, default=None, help='Input WALLABY milkyway fits file')
-    parser.add_argument('--hi4pi_image', type=str, required=True, default=None, help='Input HI4PI single dish image file')
-    parser.add_argument('--output_image', type=str, required=False, default="combined.fits", help='Filename for combined fits image')
-    parser.add_argument('--hdu_index', required=False, default=0, help='Default HDU index for WALLABY cube')
-    parser.add_argument('--size', required=False, default=320, help='Height and width of the WALLABY milkyway cube [arcmin]')
-    parser.add_argument('--miriad_image', type=str, required=False, default='miriad/miriad-dev', help='Docker image for Miriad')
-    parser.add_argument('--miriad_script', type=str, required=False, default='src/combinemw.sh', help='Miriad script for combining single dish HI4PI and WALLABY Milkyway observation')
-    parser.add_argument('--miriad_mount', type=str, required=False, default='/data', help='Miriad container mount point for directory')
-    args = parser.parse_args(argv)
-    return args
-
-
 @flow
 def main(argv):
+    # Args and config
     logger = get_run_logger()
-    args = parse_args(argv)
+    parser = ArgumentParser()
+    parser.add_argument('-c', '--config', type=str, required=True, help='Config file')
+    args = parser.parse_args(argv)
+    assert os.path.exists(args.config), f'Config file does not exist: {args.config}'
+    config = ConfigParser()
+    config.read(args.config)
 
-    # Check args
-    assert os.path.exists(args.directory), f"Working directory does not exist: {args.directory}"
-    assert os.path.exists(os.path.join(args.directory, args.wallaby_image)), f"WALLABY milkyway image file does not exist in working directory: {args.wallaby_image}"
-    assert os.path.exists(os.path.join(args.directory, args.hi4pi_image)), f"HI4PI single dish image file does not exist: {args.hi4pi_image}"
-    assert os.path.exists(args.miriad_script), f"Miriad script does not exist: {args.miriad_script}"
+    img = config['default']['wallaby_image_file']
+    workdir = config['default']['workdir']
+
+    # Check config
+    if not os.path.exists(workdir):
+        os.mkdir(workdir)
+    assert os.path.exists(os.path.join(workdir, img)), f"WALLABY milkyway image file does not exist in working directory: {img}"
+    assert os.path.exists(config['miriad']['script']), f"Miriad script does not exist: {config['miriad']['script']}"
 
     # Open file
-    with fits.open(os.path.join(args.directory, args.wallaby_image)) as hdul:
-        hdu = hdul[args.hdu_index]
+    with fits.open(os.path.join(workdir, img)) as hdul:
+        hdu = hdul[int(config['default']['hdul'])]
+    centre = pixel_region.get_centre(hdu)
+    c_ra = centre.ra
+    c_dec = centre.dec
+    logger.info(f'Centre coordinate: ({c_ra}, {c_dec})')
 
-    # Run flow
-    # 0. download hi4pi
-    # 1. subfits
-    # 2. velorange
-    region = pixel_region(hdu, args.size, logger)
+    # Run processes
+    region = pixel_region.main(['--file', img])
     ra_min, dec_min, ra_max, dec_max = region
     region_str = f'\"region=boxes({ra_min},{dec_min},{ra_max},{dec_max})\"'
+    logger.info(region_str)
+
+    v1, v2 = velo_range.velocity_range(c_ra.value, c_dec.value)
+    logger.info(f'Velocity range: {v1} - {v2}')
+
+    hi4pi_files = download_hi4pi.download_hi4pi(
+        c_ra.value,
+        c_dec.value,
+        float(config['default']['hi4pi_width']),
+        download_hi4pi.URL,
+        download_hi4pi.CATALOG,
+        workdir
+    )
+    logger.info(f'HI4PI files: {hi4pi_files}')
+
+    exit()
 
     # Miriad
-    wallaby_image = os.path.join(args.miriad_mount, os.path.basename(args.wallaby_image))
+    wallaby_image = os.path.join(args.miriad_mount, os.path.basename(img))
     hi4pi_image = os.path.join(args.miriad_mount, os.path.basename(args.hi4pi_image))
     output_image = os.path.join(args.miriad_mount, os.path.basename(args.output_image))
-    script_filename = os.path.basename(args.miriad_script)
-    shutil.copy(args.miriad_script, os.path.join(args.directory, script_filename))
+    script_filename = os.path.basename(config['miriad']['script'])
+    shutil.copy(config['miriad']['script'], os.path.join(workdir, script_filename))
     miriad_script = os.path.join(args.miriad_mount, script_filename)
     miriad_cmd = MIRIAD_CMD.replace('$1', miriad_script)
     miriad_cmd = miriad_cmd.replace('$2', hi4pi_image)
@@ -97,7 +116,7 @@ def main(argv):
     miriad_cmd = miriad_cmd.replace('$4', output_image)
     miriad_cmd = miriad_cmd.replace('$5', region_str)
     logger.info(f'Miriad command: {miriad_cmd}')
-    volume = {args.directory: {'bind': '/data', 'mode': 'rw'}}
+    volume = {workdir: {'bind': '/data', 'mode': 'rw'}}
     miriad(args.miriad_image, volume, miriad_cmd, logger)
 
     # Cleanup

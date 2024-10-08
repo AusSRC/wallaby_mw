@@ -7,16 +7,24 @@ from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 from argparse import ArgumentParser
+from prefect import task
 
 
+def get_centre(hdu):
+    w = WCS(hdu.header)
+    c_ra_pix = hdu.header['NAXIS1'] // 2
+    c_dec_pix = hdu.header['NAXIS2'] // 2
+    centre = SkyCoord.from_pixel(c_ra_pix, c_dec_pix, wcs=w)
+    return centre
+
+
+@task(name='wallaby_pixel_region')
 def wallaby_pixel_region(hdu, size):
     """Define the region of the WALLABY cube extract from imsub for miriad single dish combination
 
     """
     w = WCS(hdu.header)
-    c_ra_pix = hdu.header['NAXIS1'] // 2
-    c_dec_pix = hdu.header['NAXIS2'] // 2
-    centre = SkyCoord.from_pixel(c_ra_pix, c_dec_pix, wcs=w)
+    centre = get_centre(hdu)
     dr = size // 2 * u.arcmin
     ra_max, dec_max = SkyCoord(ra=centre.ra - dr, dec=centre.dec + dr).to_pixel(wcs=w)
     ra_min, dec_min = SkyCoord(ra=centre.ra + dr, dec=centre.dec - dr).to_pixel(wcs=w)
@@ -32,12 +40,13 @@ def parse_args(argv):
     return args
 
 
+@task(name='pixel_region_main')
 def main(argv):
     args = parse_args(argv)
     assert os.path.exists(args.file), f"Provided WALLABY milkyway fits file {args.file} does not exist"
-    hdul = fits.open(args.file)
-    wallaby_pixel_region(hdu=hdul[args.hdu_index], size=args.size)
-    hdul.close()
+    with fits.open(args.file) as hdul:
+        region = wallaby_pixel_region(hdu=hdul[args.hdu_index], size=args.size)
+    return region
 
 
 if __name__ == '__main__':
