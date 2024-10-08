@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#define VDEV  60.0
+#define VDEV  70.0
 #define RMAX  20.0
 #define ZDISC  5.0
 #define RSUN   8.5

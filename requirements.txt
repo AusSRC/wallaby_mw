@@ -3,3 +3,4 @@ astropy
 numpy
 docker
 prefect
+wget
