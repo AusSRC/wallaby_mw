@@ -26,7 +26,6 @@ from astropy.wcs import WCS
 import numpy as np
 import os
 import getopt
-from prefect import task
 
 
 def main(argv):

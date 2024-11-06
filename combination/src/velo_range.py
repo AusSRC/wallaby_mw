@@ -12,7 +12,6 @@ Compilation: gcc -O3 -o velo_range velo_range.c -lm
 import sys
 import math
 import numpy as np
-from prefect import task
 
 
 VDEV = 70.0
@@ -61,7 +60,6 @@ def scale_height(r):
     return ZDISC * (r / RSUN)
 
 
-@task(name='velo_range')
 def velocity_range(ra, dec):
     """Main function of original velo_range.c code converted into a Python function for use in pipeline.
 
@@ -110,7 +108,6 @@ def velocity_range(ra, dec):
     return (v1, v2)
 
 
-@task(name='velo_range_main')
 def main(argv):
     if len(argv) != 2:
         print("Usage: ./velo_range <ra> <dec>\n")

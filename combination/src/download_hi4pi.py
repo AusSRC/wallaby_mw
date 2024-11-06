@@ -9,7 +9,6 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astroquery.vizier import Vizier
-from prefect import task
 
 
 URL = 'https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
@@ -25,7 +24,6 @@ def parse_args(argv):
     return args
 
 
-@task(name='hi4pi_download')
 def download_hi4pi(ra, dec, width, url, catalog, output_dir='./'):
     files = []
     centre = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
@@ -48,7 +46,6 @@ def download_hi4pi(ra, dec, width, url, catalog, output_dir='./'):
     return files
 
 
-@task(name='hi4pi_download_main')
 def main(argv):
     args = parse_args(argv)
     logging.info(f'Centre coordinates for image: ({round(args.ra, 2)}, {round(args.dec, 2)})')

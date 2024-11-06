@@ -7,7 +7,6 @@ from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 from argparse import ArgumentParser
-from prefect import task
 
 
 def get_centre(hdu):
@@ -18,7 +17,6 @@ def get_centre(hdu):
     return centre
 
 
-@task(name='wallaby_pixel_region')
 def wallaby_pixel_region(hdu, size):
     """Define the region of the WALLABY cube extract from imsub for miriad single dish combination
 
@@ -40,7 +38,6 @@ def parse_args(argv):
     return args
 
 
-@task(name='pixel_region_main')
 def main(argv):
     args = parse_args(argv)
     assert os.path.exists(args.file), f"Provided WALLABY milkyway fits file {args.file} does not exist"
