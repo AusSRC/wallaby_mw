@@ -35,14 +35,21 @@ process miriad_combination_script {
 }
 
 process miriad {
+    container = params.MIRIAD_IMAGE
+    containerOptions = "--bind ${params.SCRATCH_ROOT}:${params.SCRATCH_ROOT}"
+
     input:
-        val script
+        val miriad_script
+        val output_image
 
     output:
-        TBA
+        val output_image
 
     script:
         """
+        #!/bin/bash
+
+        miriad $miriad_script
         """
 }
 
@@ -60,6 +67,7 @@ process source_finding {
 workflow milkyway {
     take:
         IMAGE
+        COMBINED_IMAGE
 
     main:
         subfits(IMAGE)
