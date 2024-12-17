@@ -4,33 +4,44 @@ nextflow.enable.dsl = 2
 
 process subfits {
     container = params.COMBINATION_IMAGE
-    containerOptions = "--bind ${params.SCRATCH_ROOT}:${params.SCRATCH_ROOT}"
+    containerOptions = "--bind ${params.WORKDIR}:${params.CONTAINER_MOUNT}"
     input:
-        val image
-        val output_image
+        val wallaby_image_filename
+        val output_image_filename
 
     output:
-        val output_image
+        val "${params.CONTAINER_MOUNT}/$output_image", emit: subfits_image
+        val true, emit: done
 
     script:
         """
-        python3 /app/src/subfits.py -i $image -o $output_image -r
+        python3 /app/src/subfits.py \
+            -i ${params.CONTAINER_MOUNT}/$wallaby_image_filename \
+            -o ${params.CONTAINER_MOUNT}/$output_image_filename \
+            -r
         """
 }
 
-process miriad_combination_script {
+process precombine {
     container = params.COMBINATION_IMAGE
-    containerOptions = "--bind ${params.SCRATCH_ROOT}:${params.SCRATCH_ROOT}"
+    containerOptions = "--bind ${params.WORKDIR}:${params.CONTAINER_MOUNT}"
     input:
         val mwcombine_config
-        val output_image
+        val wallaby_image
+        val combined_image
+        val miriad_script
+        val ready
 
     output:
-        val output_image
+        val true, emit: done
 
     script:
         """
-        python3 /app/precombine.py -c $mwcombine_config
+        python3 /app/precombine.py \
+            -c $mwcombine_config \
+            -i $wallaby_image \
+            -o ${params.CONTAINER_MOUNT}/$combined_image \
+            -s ${params.CONTAINER_MOUNT}/$miriad_script
         """
 }
 
@@ -40,10 +51,10 @@ process miriad {
 
     input:
         val miriad_script
-        val output_image
+        val ready
 
     output:
-        val output_image
+        val true, emit: done
 
     script:
         """
@@ -53,24 +64,28 @@ process miriad {
         """
 }
 
-process source_finding {
-    input:
-        val image
-
-    main:
-        sofia()
-        sofiax()
-}
-
 // ---------------------------------------------------------------------------------------
 
 workflow milkyway {
     take:
-        IMAGE
-        COMBINED_IMAGE
+        wallaby_image
+        mwcombine_config
 
     main:
-        subfits(IMAGE)
-        single_dish_combination(subfits.out.image)
-        source_finding(single_dish_combination.out.image)
+        subfits(wallaby_image, params.SUBFITS_FILENAME)
+        precombine(
+            mwcombine_config,
+            subfits.out.subfits_image,
+            params.COMBINED_IMAGE_FILENAME,
+            params.MIRIAD_SCRIPT_FILENAME,
+            subfits.out.done
+        )
+}
+
+workflow {
+    main:
+        milkyway(
+            params.WALLABY_IMAGE,
+            params.MWCOMBINE_CONFIG,
+        )
 }

@@ -25,14 +25,31 @@ def main(argv):
     # Args and config
     parser = ArgumentParser()
     parser.add_argument('-c', '--config', type=str, required=True, help='Config file')
+    parser.add_argument('-i', '--input_image', type=str, required=False, help='Input image', default=None)
+    parser.add_argument('-o', '--combined_image', type=str, required=False, help='Output combined image filename', default=None)
+    parser.add_argument('-s', '--output_filename', type=str, required=False, help='Output miriad script filename', default=None)
     args = parser.parse_args(argv)
     assert os.path.exists(args.config), f'Config file does not exist: {args.config}'
     config = ConfigParser()
     config.read(args.config)
-
-    img = config['default']['wallaby_image_file']
     workdir = config['default']['workdir']
+
+    # Choose argument over config for certain parameters
+    if args.input_image is not None:
+        img = args.input_image
+    else:
+        img = config['default']['wallaby_image_file']
     img_file = os.path.join(workdir, img)
+
+    if args.output_filename is not None:
+        output_filename = args.output_filename
+    else:
+        output_filename = config['miriad']['output_script']
+
+    if args.combined_image is not None:
+        combined_image_filename = args.combined_image
+    else:
+        combined_image_filename = os.path.basename(config['default']['output_image'])
 
     # Check config
     assert os.path.exists(workdir), f'Working directory does not exist: {workdir}'
@@ -73,10 +90,10 @@ def main(argv):
     for idx, hi4pi_f in enumerate(hi4pi_files):
         wallaby_image = os.path.join(config['miriad']['mount'], os.path.basename(img_file))
         hi4pi_image = os.path.join(config['miriad']['mount'], os.path.basename(hi4pi_f))
-        output_image = os.path.join(config['miriad']['mount'], os.path.basename(config['default']['output_image']))
-        write_file = os.path.join(workdir, config['miriad']['output_script'])
+        output_image = os.path.join(config['miriad']['mount'], combined_image_filename)
+        write_file = os.path.join(workdir, output_filename)
         if len(hi4pi_files) > 1:
-            write_file = os.path.join(workdir, f"{idx}.{config['miriad']['output_script']}")
+            write_file = os.path.join(workdir, f"{idx}.{output_filename}")
 
         # Read and replace in miriad template
         with open(config['miriad']['template']) as f:
