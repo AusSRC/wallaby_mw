@@ -1,7 +1,0 @@
-astroquery>=0.4.7
-astropy
-numpy
-prefect
-wget
-asyncio
-configparser
