@@ -1,6 +1,6 @@
 # WALLABY Milky Way
 
-A Python (Prefect) pipeline for combining WALLABY Milky Way observations with HI4PI single dish observations, and performing source finding, for generating a source catalog of Milky Way data products. This has been written to run on the [CANFAR science platform](https://www.canfar.net/science-portal/).
+A Python (Prefect) pipeline for combining WALLABY Milky Way observations with Parkes HI4PI single dish observations, and performing source finding, for generating a source catalog of Milky Way data products. This has been written to run on the [CANFAR science platform](https://www.canfar.net/science-portal/).
 
 ## Overview
 
@@ -40,6 +40,8 @@ flowchart TD
     hi4pi --> miriad_script
     miriad_script --> miriad
     miriad --> sofia
+    wallaby --> velocity_range
+    velocity_range --> sofia
     sofia --> sofiax
 
 ```
@@ -63,4 +65,4 @@ Update the [configuration file](./pipeline.ini) template provided in the reposit
 | Parameter | Section | Description |
 | --- | --- | --- |
 | workdir | default | Local working directory |
-| workdir | canfar | Working directory on the filesystem attached to the CANFAR science platform |
+| TBA |  |  |

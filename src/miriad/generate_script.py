@@ -91,10 +91,11 @@ def main(argv):
     logging.info(f'Creating miriad script: {args.filename}')
     with open(args.filename, 'w') as f:
         f.writelines('#!/bin/csh\n')
+        f.writelines('miriad\n')
 
         # Reading files
-        f.writelines(f'fits in={args.singledish} op=xyin out={os.path.join(workdir, "wallaby")}\n')
-        f.writelines(f'fits in={args.wallaby} op=xyin out={os.path.join(workdir, "sd")}\n')
+        f.writelines(f'fits in={args.singledish} op=xyin out={os.path.join(workdir, "sd")}\n')
+        f.writelines(f'fits in={args.wallaby} op=xyin out={os.path.join(workdir, "wallaby")}\n')
 
         # Preprocess single dish data
         f.writelines(f'hanning in={os.path.join(workdir, "sd")} out={os.path.join(workdir, "sd_hann")}\n')
@@ -104,13 +105,13 @@ def main(argv):
         # Preprocess WALLABY Milky Way observation
         f.writelines(f'velsw in={os.path.join(workdir, "wallaby")} axis=freq options=altspc\n')
         f.writelines(f'velsw in={os.path.join(workdir, "wallaby")} axis=freq,lsrk\n')
-        f.writelines(f'imsub in={os.path.join(workdir, "wallaby")} out={os.path.join(workdir, "wallaby_trim")} region=boxes({region_str})({"141,394"})\n')
+        f.writelines(f'imsub in={os.path.join(workdir, "wallaby")} out={os.path.join(workdir, "wallaby_trim")} "region=boxes({region_str})({"141,394"})"\n')
 
         # Regrid and merge
         f.writelines(f'regrid in={os.path.join(workdir, "sd_imsub")} tin={os.path.join(workdir, "wallaby_trim")} out={os.path.join(workdir, "sd_regrid")}\n')
         f.writelines(f'immerge in={os.path.join(workdir, "wallaby_trim")},{os.path.join(workdir, "sd_regrid")} out={os.path.join(workdir, "combined")} uvrange=25,35,meters options=notaper\n')
         f.writelines(f'fits in={os.path.join(workdir, "combined")} op=xyout out={args.output}\n')
-        f.writelines('exit\n')
+        f.writelines('quit\n')
 
     logging.info('Changing permissons (+x)')
     os.chmod(args.filename, 0o770)

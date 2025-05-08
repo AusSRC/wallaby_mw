@@ -64,23 +64,27 @@ def info_canfar_session(id, logs=False):
 
 
 @task(task_run_name='{name}')
-def job(name, params, interval=1, *args, **kwargs):
+def job(params, name=None, interval=1, *args, **kwargs):
     """Job wrapper for CANFAR containers
 
     """
+    if not name:
+        name = params['name']
     logger = get_run_logger()
     logger.info(name)
     completed = False
-    session_id = create_canfar_session(params)
+    session_id = create_canfar_session(params).strip('\n')
     logger.info(f'Session: {session_id}')
     while not completed:
         res = info_canfar_session(session_id, logs=False)
         status = json.loads(res.text)['status']
+
         completed = status in COMPLETE_STATES
         failed = status in FAILED_STATES
         if failed:
-            res = info_canfar_session(session_id, logs=True)
-            raise Exception(f'Job failed {res.text}')
+            logs = info_canfar_session(session_id, logs=True)
+            logger.error(logs.content)
+            raise Exception(f'Job failed {logs.text}')
 
         time.sleep(interval)
         logger.info(f'Job {session_id} {status}')
@@ -108,6 +112,7 @@ def main(argv):
 
     # Assert CANFAR paths exist
     image = config['pipeline']['wallaby_image']
+    workdir = config['pipeline']['workdir']
     canfar_get_images()
     if not client.isdir(path_to_vos(config['pipeline']['workdir'])):
         client.mkdir(path_to_vos(config['pipeline']['workdir']))
@@ -115,8 +120,8 @@ def main(argv):
 
     # Subfits
     logger.info('Subfits')
-    subfits_image = os.path.join(config['pipeline']['workdir'], config['subfits']['filename'])
-    params = {
+    subfits_image = os.path.join(workdir, config['subfits']['filename'])
+    job({
         'name': "subfits",
         'image': config['subfits']['image'],
         'cores': 4,
@@ -125,24 +130,117 @@ def main(argv):
         'cmd': 'python3',
         'args': f"{config['subfits']['script']} -i {image} -o {subfits_image} -r",
         'env': {}
-    }
-    # job(params['name'], params, interval=sleep_interval)
+    })
 
     # Download HI4PI
     logger.info('HI4PI download')
-    hi4pi_image = os.path.join(config['pipeline']['workdir'], config['hi4pi']['filename'])
+    hi4pi_image = os.path.join(workdir, config['hi4pi']['filename'])
     vizier_width = float(config['hi4pi']['vizier_query_width'])
-    params = {
+    job({
         'name': "hi4pi-download",
         'image': config['hi4pi']['image'],
-        'cores': 2,
-        'ram': 8,
+        'cores': 1,
+        'ram': 4,
         'kind': "headless",
         'cmd': 'python3',
         'args': f"{config['hi4pi']['script']} -i {image} -o {hi4pi_image} -w {vizier_width}",
         'env': {}
-    }
-    job(params['name'], params, interval=sleep_interval)
+    })
+
+    # Generate miriad bash script
+    logger.info('Generate miriad bash script')
+    job({
+        'name': "miriad-script",
+        'image': config['miriad_script']['image'],
+        'cores': 1,
+        'ram': 4,
+        'kind': "headless",
+        'cmd': 'python3',
+        'args': f"{config['miriad_script']['script']} -wd {workdir} -f {os.path.join(workdir, config['miriad_script']['output_filename'])} -o {os.path.join(workdir, config['miriad_script']['combination_filename'])} -w {config['pipeline']['wallaby_image']} -sd {os.path.join(workdir, config['hi4pi']['filename'])}",
+        'env': {}
+    })
+
+    # Run miriad preprocessing and combination
+    logger.info('Single-dish WALLABY image preprocessing and combination')
+    job({
+        'name': "miriad",
+        'image': config['miriad']['image'],
+        'cores': 8,
+        'ram': 64,
+        'kind': "headless",
+        'cmd': '/bin/sh',
+        'args': '/arc/projects/WALLABY_test/mw/ngc5044_1/cmd/combinemw.sh',
+        'env': {}
+    })
+
+    # sofia parameter files
+    logger.info('Generating sofia parameter files')
+    combined_image = os.path.join(workdir, config['miriad_script']['combination_filename'])
+    job({
+        'name': "sofia-config-mw",
+        'image': config['sofia']['sofia_config_mw_image'],
+        'cores': 1,
+        'ram': 4,
+        'kind': "headless",
+        'cmd': 'python3',
+        'args': f"/app/update_sofia_config.py --image={combined_image} --input_parameter_file={config['sofia']['parameter_file']} --output_parameter_files={config['pipeline']['workdir']} --input_data={combined_image} --output_directory={workdir} --output_filename=outputs",
+        'env': {}
+    })
+
+    # SoFiA negative velocity range
+    logger.info('SoFiA negative velocity range')
+    neg_par = os.path.join(workdir, config['sofia']['negative_parameter_file'])
+    job({
+        'name': "sofia-neg",
+        'image': config['sofia']['sofia_image'],
+        'cores': 8,
+        'ram': 64,
+        'kind': "headless",
+        'cmd': 'sofia',
+        'args': neg_par,
+        'env': {}
+    })
+
+    # SoFiA positive velocity range
+    logger.info('SoFiA positive velocity range')
+    pos_par = os.path.join(workdir, config['sofia']['positive_parameter_file'])
+    job({
+        'name': "sofia-pos",
+        'image': config['sofia']['sofia_image'],
+        'cores': 8,
+        'ram': 64,
+        'kind': "headless",
+        'cmd': 'sofia',
+        'args': pos_par,
+        'env': {}
+    })
+
+    # SoFiAX config generation
+    logger.info('Updating sofiax config file')
+    sofiax_run_config = os.path.join(workdir, config['sofia']['sofiax_config_run'])
+    job({
+        'name': "sofiax-update",
+        'image': config['sofia']['update_sofiax_config_image'],
+        'cores': 1,
+        'ram': 4,
+        'kind': "headless",
+        'cmd': 'python3',
+        'args': f"/app/update_sofiax_config.py --config={config['sofia']['sofiax_config_template']} --output={sofiax_run_config} --run_name={config['sofia']['run_name']}",
+        'env': {}
+    })
+
+    # Run SoFiAX
+    logger.info('Running SoFiAX')
+    job({
+        'name': "sofiax",
+        'image': config['sofia']['sofiax_image'],
+        'cores': 2,
+        'ram': 16,
+        'kind': "headless",
+        'cmd': 'python3',
+        'args': f"-m sofiax -c {sofiax_run_config} -p {neg_par} {pos_par}",
+        'env': {}
+    })
 
 
 if __name__ == '__main__':
