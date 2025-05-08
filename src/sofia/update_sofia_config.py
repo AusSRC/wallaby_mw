@@ -171,15 +171,18 @@ def main(argv):
     parser.add_argument('-o', '--output_parameter_files', required=True, help='Output SoFiA parameter file directory')
     parser.add_argument('-pf', '--positive_filename', default='pos.par', required=False, help='Parameter filename for positive velocity range')
     parser.add_argument('-nf', '--negative_filename', default='neg.par', required=False, help='Parameter filename for negative velocity range')
+    parser.add_argument('-po', '--positive_output_filename', default='positive', required=False, help='Parameter filename for positive velocity range')
+    parser.add_argument('-no', '--negative_output_filename', default='negative', required=False, help='Parameter filename for negative velocity range')
     parser.add_argument('-d', '--input_data', required=True, help='Parameter: input.data')
     parser.add_argument('-od', '--output_directory', required=True, help='Parameter: output.directory')
-    parser.add_argument('-of', '--output_filename', required=True, help='Parameter: output.filename')
     args = parser.parse_args(argv)
 
     assert os.path.exists(args.image), 'Fits image does not exist'
     assert os.path.exists(args.input_parameter_file), 'SoFiA parameter file template does not exist'
     os.makedirs(args.output_parameter_files, exist_ok=True)
+    os.makedirs(args.output_directory, exist_ok=True)
     assert os.path.exists(args.output_parameter_files), 'Output directory for SoFiA parameter files does not exist'
+    assert os.path.exists(args.output_directory), 'Output directory for SoFiA output products'
 
     # Open image cube
     with fits.open(args.image) as hdul:
@@ -210,13 +213,13 @@ def main(argv):
         'input.data': args.input_data,
         'input.region': f'0,99999,0,99999,{fpix1},99999',
         'output.directory': args.output_directory,
-        'output.filename': args.output_filename
+        'output.filename': args.negative_output_filename
     }
     update_dict_pos = {
         'input.data': args.input_data,
         'input.region': f'0,99999,0,99999,0,{fpix2}',
         'output.directory': args.output_directory,
-        'output.filename': args.output_filename
+        'output.filename': args.positive_output_filename
     }
 
     # Writing to parameter files
