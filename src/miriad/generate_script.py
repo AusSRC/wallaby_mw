@@ -99,7 +99,7 @@ def main(argv):
 
         # Preprocess single dish data
         f.writelines(f'hanning in={os.path.join(workdir, "sd")} out={os.path.join(workdir, "sd_hann")}\n')
-        f.writelines(f'imsub in={os.path.join(workdir, "sd_hann")} out={os.path.join(workdir, "sd_imsub_incr")}\n')
+        f.writelines(f'imsub in={os.path.join(workdir, "sd_hann")} out={os.path.join(workdir, "sd_imsub_incr")} incr=1,1,2\n')
         f.writelines(f'imsub in={os.path.join(workdir, "sd_imsub_incr")} out={os.path.join(workdir, "sd_imsub")} "region=images({args.imsub_channels})"\n')
 
         # Preprocess WALLABY Milky Way observation
@@ -111,10 +111,9 @@ def main(argv):
         f.writelines(f'regrid in={os.path.join(workdir, "sd_imsub")} tin={os.path.join(workdir, "wallaby_trim")} out={os.path.join(workdir, "sd_regrid")}\n')
         f.writelines(f'immerge in={os.path.join(workdir, "wallaby_trim")},{os.path.join(workdir, "sd_regrid")} out={os.path.join(workdir, "combined")} uvrange=25,35,meters options=notaper\n')
         f.writelines(f'fits in={os.path.join(workdir, "combined")} op=xyout out={args.output}\n')
-        f.writelines('quit\n')
 
     logging.info('Changing permissons (+x)')
-    os.chmod(args.filename, 0o770)
+    os.chmod(args.filename, 0o700)
 
     logging.info('Complete')
 

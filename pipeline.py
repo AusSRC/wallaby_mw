@@ -64,7 +64,7 @@ def info_canfar_session(id, logs=False):
 
 
 @task(task_run_name='{name}')
-def job(params, name=None, interval=1, *args, **kwargs):
+def job(params, name=None, interval=10, *args, **kwargs):
     """Job wrapper for CANFAR containers
 
     """
@@ -77,7 +77,11 @@ def job(params, name=None, interval=1, *args, **kwargs):
     logger.info(f'Session: {session_id}')
     while not completed:
         res = info_canfar_session(session_id, logs=False)
-        status = json.loads(res.text)['status']
+        try:
+            status = json.loads(res.text)['status']
+        except:
+            logger.info('Status 500')
+            continue
 
         completed = status in COMPLETE_STATES
         failed = status in FAILED_STATES
@@ -121,35 +125,41 @@ def main(argv):
     # Subfits
     logger.info('Subfits')
     subfits_image = os.path.join(workdir, config['subfits']['filename'])
-    job({
-        'name': "subfits",
-        'image': config['subfits']['image'],
-        'cores': 4,
-        'ram': 32,
-        'kind': "headless",
-        'cmd': 'python3',
-        'args': f"{config['subfits']['script']} -i {image} -o {subfits_image} -r",
-        'env': {}
-    })
+    if not client.isfile(subfits_image):
+        job('subfits', {
+            'name': "subfits",
+            'image': config['subfits']['image'],
+            'cores': 4,
+            'ram': 32,
+            'kind': "headless",
+            'cmd': 'python3',
+            'args': f"{config['subfits']['script']} -i {image} -o {subfits_image} -r",
+            'env': {}
+        })
+    else:
+        logger.info(f'Subfits image {subfits_image} already exists. Skipping step')
 
     # Download HI4PI
     logger.info('HI4PI download')
     hi4pi_image = os.path.join(workdir, config['hi4pi']['filename'])
     vizier_width = float(config['hi4pi']['vizier_query_width'])
-    job({
-        'name': "hi4pi-download",
-        'image': config['hi4pi']['image'],
-        'cores': 1,
-        'ram': 4,
-        'kind': "headless",
-        'cmd': 'python3',
-        'args': f"{config['hi4pi']['script']} -i {image} -o {hi4pi_image} -w {vizier_width}",
-        'env': {}
-    })
+    if not client.isfile(hi4pi_image):
+        job('hi4pi_download', {
+            'name': "hi4pi-download",
+            'image': config['hi4pi']['image'],
+            'cores': 1,
+            'ram': 4,
+            'kind': "headless",
+            'cmd': 'python3',
+            'args': f"{config['hi4pi']['script']} -i {image} -o {hi4pi_image} -w {vizier_width}",
+            'env': {}
+        })
+    else:
+        logger.info(f'HI4PI image {hi4pi_image} already exists. Skipping step')
 
     # Generate miriad bash script
     logger.info('Generate miriad bash script')
-    job({
+    job('miraid_script', {
         'name': "miriad-script",
         'image': config['miriad_script']['image'],
         'cores': 1,
@@ -162,39 +172,40 @@ def main(argv):
 
     # Run miriad preprocessing and combination
     logger.info('Single-dish WALLABY image preprocessing and combination')
-    job({
+    miriad_script = os.path.join(workdir, config['miriad_script']['output_filename'])
+    job('miriad', {
         'name': "miriad",
         'image': config['miriad']['image'],
-        'cores': 8,
-        'ram': 64,
+        'cores': 4,
+        'ram': 32,
         'kind': "headless",
         'cmd': '/bin/sh',
-        'args': '/arc/projects/WALLABY_test/mw/ngc5044_1/cmd/combinemw.sh',
+        'args': miriad_script,
         'env': {}
     })
 
     # sofia parameter files
     logger.info('Generating sofia parameter files')
     combined_image = os.path.join(workdir, config['miriad_script']['combination_filename'])
-    job({
+    job('sofia-config-mw', {
         'name': "sofia-config-mw",
         'image': config['sofia']['sofia_config_mw_image'],
         'cores': 1,
         'ram': 4,
         'kind': "headless",
         'cmd': 'python3',
-        'args': f"/app/update_sofia_config.py --image={combined_image} --input_parameter_file={config['sofia']['parameter_file']} --output_parameter_files={config['pipeline']['workdir']} --input_data={combined_image} --output_directory={workdir} --output_filename=outputs",
+        'args': f"/app/update_sofia_config.py --image={combined_image} --input_parameter_file={config['sofia']['parameter_file']} --output_parameter_files={config['pipeline']['workdir']} --input_data={combined_image} --output_directory={workdir}",
         'env': {}
     })
 
     # SoFiA negative velocity range
     logger.info('SoFiA negative velocity range')
     neg_par = os.path.join(workdir, config['sofia']['negative_parameter_file'])
-    job({
+    job('sofia-neg', {
         'name': "sofia-neg",
         'image': config['sofia']['sofia_image'],
-        'cores': 8,
-        'ram': 64,
+        'cores': 4,
+        'ram': 32,
         'kind': "headless",
         'cmd': 'sofia',
         'args': neg_par,
@@ -204,11 +215,11 @@ def main(argv):
     # SoFiA positive velocity range
     logger.info('SoFiA positive velocity range')
     pos_par = os.path.join(workdir, config['sofia']['positive_parameter_file'])
-    job({
+    job('sofia-pos', {
         'name': "sofia-pos",
         'image': config['sofia']['sofia_image'],
-        'cores': 8,
-        'ram': 64,
+        'cores': 4,
+        'ram': 32,
         'kind': "headless",
         'cmd': 'sofia',
         'args': pos_par,
@@ -218,7 +229,7 @@ def main(argv):
     # SoFiAX config generation
     logger.info('Updating sofiax config file')
     sofiax_run_config = os.path.join(workdir, config['sofia']['sofiax_config_run'])
-    job({
+    job('sofiax-update', {
         'name': "sofiax-update",
         'image': config['sofia']['update_sofiax_config_image'],
         'cores': 1,
@@ -231,7 +242,7 @@ def main(argv):
 
     # Run SoFiAX
     logger.info('Running SoFiAX')
-    job({
+    job('sofiax', {
         'name': "sofiax",
         'image': config['sofia']['sofiax_image'],
         'cores': 2,
