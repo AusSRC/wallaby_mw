@@ -64,12 +64,10 @@ def info_canfar_session(id, logs=False):
 
 
 @task(task_run_name='{name}')
-def job(params, name=None, interval=10, *args, **kwargs):
+def job(name, params, interval=10, *args, **kwargs):
     """Job wrapper for CANFAR containers
 
     """
-    if not name:
-        name = params['name']
     logger = get_run_logger()
     logger.info(name)
     completed = False
@@ -125,7 +123,7 @@ def main(argv):
     # Subfits
     logger.info('Subfits')
     subfits_image = os.path.join(workdir, config['subfits']['filename'])
-    if not client.isfile(subfits_image):
+    if not client.isfile(path_to_vos(subfits_image)):
         job('subfits', {
             'name': "subfits",
             'image': config['subfits']['image'],
@@ -143,7 +141,7 @@ def main(argv):
     logger.info('HI4PI download')
     hi4pi_image = os.path.join(workdir, config['hi4pi']['filename'])
     vizier_width = float(config['hi4pi']['vizier_query_width'])
-    if not client.isfile(hi4pi_image):
+    if not client.isfile(path_to_vos(hi4pi_image)):
         job('hi4pi_download', {
             'name': "hi4pi-download",
             'image': config['hi4pi']['image'],
@@ -159,20 +157,23 @@ def main(argv):
 
     # Generate miriad bash script
     logger.info('Generate miriad bash script')
-    job('miraid_script', {
-        'name': "miriad-script",
-        'image': config['miriad_script']['image'],
-        'cores': 1,
-        'ram': 4,
-        'kind': "headless",
-        'cmd': 'python3',
-        'args': f"{config['miriad_script']['script']} -wd {workdir} -f {os.path.join(workdir, config['miriad_script']['output_filename'])} -o {os.path.join(workdir, config['miriad_script']['combination_filename'])} -w {config['pipeline']['wallaby_image']} -sd {os.path.join(workdir, config['hi4pi']['filename'])}",
-        'env': {}
-    })
+    miriad_script = os.path.join(workdir, config['miriad_script']['output_filename'])
+    if not client.isfile(path_to_vos(miriad_script)):
+        job('miraid_script', {
+            'name': "miriad-script",
+            'image': config['miriad_script']['image'],
+            'cores': 1,
+            'ram': 4,
+            'kind': "headless",
+            'cmd': 'python3',
+            'args': f"{config['miriad_script']['script']} -wd {workdir} -f {os.path.join(workdir, config['miriad_script']['output_filename'])} -o {os.path.join(workdir, config['miriad_script']['combination_filename'])} -w {subfits_image} -sd {os.path.join(workdir, config['hi4pi']['filename'])}",
+            'env': {}
+        })
+    else:
+        logger.info('Miriad script exists. Skipping step')
 
     # Run miriad preprocessing and combination
     logger.info('Single-dish WALLABY image preprocessing and combination')
-    miriad_script = os.path.join(workdir, config['miriad_script']['output_filename'])
     job('miriad', {
         'name': "miriad",
         'image': config['miriad']['image'],
