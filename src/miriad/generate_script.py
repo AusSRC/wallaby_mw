@@ -123,7 +123,7 @@ def main(argv):
 
         # Regrid and merge
         f.writelines(f'regrid in={os.path.join(workdir, "sd_imsub")} tin={os.path.join(workdir, "wallaby_trim")} out={os.path.join(workdir, "sd_regrid")}\n')
-        f.writelines(f'immerge in={os.path.join(workdir, "wallaby_trim")},{os.path.join(workdir, "sd_regrid")} out={os.path.join(workdir, "combined")} {args.immerge_uvrange} options=notaper\n')
+        f.writelines(f'immerge in={os.path.join(workdir, "wallaby_trim")},{os.path.join(workdir, "sd_regrid")} out={os.path.join(workdir, "combined")} uvrange={args.immerge_uvrange} options=notaper\n')
         f.writelines(f'fits in={os.path.join(workdir, "combined")} op=xyout out={args.output}\n')
 
     logging.info('Changing permissons (+x)')
