@@ -45,8 +45,22 @@ def main(argv):
     parser.add_argument('-w', '--wallaby', required=True, help='WALLABY image file')
     parser.add_argument('-sd', '--singledish', required=True, help='HI4PI single dish image file')
     parser.add_argument(
-        '-c',
-        '--imsub_channels',
+        '-r',
+        '--imsub_region',
+        help='[Optional] Argument for subregion range to keep in the WALLABY observation',
+        required=False,
+        default=None
+    )
+    parser.add_argument(
+        '-cw',
+        '--imsub_wallaby_channels',
+        help='[Optional] Argument for channel range to keep in the WALLABY observation',
+        required=False,
+        default='141,394'
+    )
+    parser.add_argument(
+        '-cs',
+        '--imsub_hi4pi_channels',
         help='[Optional] Argument for channel range to keep in the HI4PI observation',
         required=False,
         default='42,426'
@@ -78,14 +92,14 @@ def main(argv):
     if os.path.exists(args.output):
         logging.error(f'Output single-dish WALLABY combination already produced: {args.output}')
 
-    # Open fits file
-    logging.info('Reading WALLABY fits header for spatial combination region')
-    with fits.open(args.wallaby) as hdul:
-        header = hdul[0].header
-        region = wallaby_pixel_region(header, args.size)
-        logging.info(f'WALLABY spatial region: {region}')
-
-    region_str = str(region).strip('()').replace(' ', '')
+    region_str = args.imsub_region
+    if args.imsub_region is None:
+        logging.info('Reading WALLABY fits header for spatial combination region')
+        with fits.open(args.wallaby) as hdul:
+            header = hdul[0].header
+            region = wallaby_pixel_region(header, args.size)
+            logging.info(f'WALLABY spatial region: {region}')
+        region_str = str(region).strip('()').replace(' ', '')
 
     # Generate bash script
     logging.info(f'Creating miriad script: {args.filename}')
@@ -100,16 +114,16 @@ def main(argv):
         # Preprocess single dish data
         f.writelines(f'hanning in={os.path.join(workdir, "sd")} out={os.path.join(workdir, "sd_hann")}\n')
         f.writelines(f'imsub in={os.path.join(workdir, "sd_hann")} out={os.path.join(workdir, "sd_imsub_incr")} incr=1,1,2\n')
-        f.writelines(f'imsub in={os.path.join(workdir, "sd_imsub_incr")} out={os.path.join(workdir, "sd_imsub")} "region=images({args.imsub_channels})"\n')
+        f.writelines(f'imsub in={os.path.join(workdir, "sd_imsub_incr")} out={os.path.join(workdir, "sd_imsub")} "region=images({args.imsub_hi4pi_channels})"\n')
 
         # Preprocess WALLABY Milky Way observation
         f.writelines(f'velsw in={os.path.join(workdir, "wallaby")} axis=freq options=altspc\n')
         f.writelines(f'velsw in={os.path.join(workdir, "wallaby")} axis=freq,lsrk\n')
-        f.writelines(f'imsub in={os.path.join(workdir, "wallaby")} out={os.path.join(workdir, "wallaby_trim")} "region=boxes({region_str})({"141,394"})"\n')
+        f.writelines(f'imsub in={os.path.join(workdir, "wallaby")} out={os.path.join(workdir, "wallaby_trim")} "region=boxes({region_str})({args.imsub_wallaby_channels})"\n')
 
         # Regrid and merge
         f.writelines(f'regrid in={os.path.join(workdir, "sd_imsub")} tin={os.path.join(workdir, "wallaby_trim")} out={os.path.join(workdir, "sd_regrid")}\n')
-        f.writelines(f'immerge in={os.path.join(workdir, "wallaby_trim")},{os.path.join(workdir, "sd_regrid")} out={os.path.join(workdir, "combined")} uvrange=25,35,meters options=notaper\n')
+        f.writelines(f'immerge in={os.path.join(workdir, "wallaby_trim")},{os.path.join(workdir, "sd_regrid")} out={os.path.join(workdir, "combined")} {args.immerge_uvrange} options=notaper\n')
         f.writelines(f'fits in={os.path.join(workdir, "combined")} op=xyout out={args.output}\n')
 
     logging.info('Changing permissons (+x)')

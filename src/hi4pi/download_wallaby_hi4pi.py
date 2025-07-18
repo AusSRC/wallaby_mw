@@ -77,7 +77,7 @@ def main(argv):
     logging.info(f'Centre coordinate: ({c_ra}, {c_dec})')
 
     # Download HI4PI images
-    hi4pi_files = download_hi4pi(c_ra.value, c_dec.value, args.width, URL, CATALOG, args.output)
+    download_hi4pi(c_ra.value, c_dec.value, args.width, URL, CATALOG, args.output)
     logging.info('Download complete')
 
 
