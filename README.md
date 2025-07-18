@@ -13,9 +13,9 @@ A Python (Prefect) pipeline for combining WALLABY Milky Way observations with Pa
 5. Run Prefect server
 6. Run WALLABY MW pipeline
 
-### Pipeline
+### Combine Pipeline
 
-Details in the source code: [`pipeline.py`](pipeline.py)
+Performs single dish and interferometer combination with all of the relevant pre-processing. Details in the source code: [`combine.py`](combine.py)
 
 ```mermaid
 
@@ -28,8 +28,6 @@ flowchart TD
     miriad_script["Generate Miriad bash script"]
     miriad["Miriad
      regridding + feathering"]
-    sofia["Source finding with SoFiA-2"]
-    sofiax["Upload to database"]
 
     config --> hi4pi
     config --> wallaby
@@ -39,11 +37,27 @@ flowchart TD
     region --> miriad_script
     hi4pi --> miriad_script
     miriad_script --> miriad
-    miriad --> sofia
     wallaby --> velocity_range
-    velocity_range --> sofia
-    sofia --> sofiax
+```
 
+### Source finding
+
+A simple pipeline to perform source finding on the output combined data cube. Splits the source finding into positive and negative velocities. Details in the source code: [`source_finding.py`](source_finding.py)
+
+```mermaid
+
+flowchart TD
+    combined["SD+WALLABY combined data cube"]
+    pos["Positive velocity range sofia parameter files"]
+    neg["Negative velocity range sofia parameter files"]
+    sofia["SoFiA-2"]
+    sofiax["SoFiAX"]
+
+    combined --> pos
+    combined --> neg
+    neg --> sofia
+    pos --> sofia
+    sofia --> sofiax
 ```
 
 ## Docker images
