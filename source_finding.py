@@ -2,12 +2,9 @@
 
 import os
 import sys
-import time
-import json
-import requests
 from argparse import ArgumentParser
 from configparser import ConfigParser
-from prefect import task, flow, get_run_logger
+from prefect import flow, get_run_logger
 from vos import Client
 from common import *
 
@@ -27,17 +24,17 @@ def main(argv):
     config.read(args.config)
     sleep_interval = float(config['pipeline']['sleep_interval'])
 
-    # Assert CANFAR paths exist
-    image = config['pipeline']['wallaby_image']
+    # Assert image file paths exist
     workdir = config['pipeline']['workdir']
+    image_filename = config['miriad_script']['combination_filename']
+    image = os.path.join(workdir, image_filename)
     canfar_get_images()
     if not client.isdir(path_to_vos(config['pipeline']['workdir'])):
         client.mkdir(path_to_vos(config['pipeline']['workdir']))
-    assert client.isfile(path_to_vos(image)), f"WALLABY image file does not exist in VO storage space {path_to_vos(image)}"
+    assert client.isfile(path_to_vos(image)), f"Combined image file does not exist in VO storage space {path_to_vos(image)}"
 
     # sofia parameter files
     logger.info('Generating sofia parameter files')
-    combined_image = os.path.join(workdir, config['miriad_script']['combination_filename'])
     job('sofia-config-mw', {
         'name': "sofia-config-mw",
         'image': config['sofia']['sofia_config_mw_image'],
@@ -45,9 +42,9 @@ def main(argv):
         'ram': 4,
         'kind': "headless",
         'cmd': 'python3',
-        'args': f"/app/update_sofia_config.py --image={combined_image} --input_parameter_file={config['sofia']['parameter_file']} --output_parameter_files={config['pipeline']['workdir']} --input_data={combined_image} --output_directory={workdir}",
+        'args': f"/app/update_sofia_config.py --image={config['sofia']['image']} --input_parameter_file={config['sofia']['parameter_file']} --output_parameter_files={config['pipeline']['workdir']} --input_data={config['sofia']['image']} --output_directory={workdir}",
         'env': {}
-    })
+    }, interval=sleep_interval)
 
     # SoFiA negative velocity range
     logger.info('SoFiA negative velocity range')
@@ -61,7 +58,7 @@ def main(argv):
         'cmd': 'sofia',
         'args': neg_par,
         'env': {}
-    })
+    }, interval=sleep_interval)
 
     # SoFiA positive velocity range
     logger.info('SoFiA positive velocity range')
@@ -75,7 +72,7 @@ def main(argv):
         'cmd': 'sofia',
         'args': pos_par,
         'env': {}
-    })
+    }, interval=sleep_interval)
 
     # SoFiAX config generation
     logger.info('Updating sofiax config file')
@@ -89,7 +86,7 @@ def main(argv):
         'cmd': 'python3',
         'args': f"/app/update_sofiax_config.py --config={config['sofia']['sofiax_config_template']} --output={sofiax_run_config} --run_name={config['sofia']['run_name']}",
         'env': {}
-    })
+    }, interval=sleep_interval)
 
     # Run SoFiAX
     logger.info('Running SoFiAX')
@@ -102,7 +99,7 @@ def main(argv):
         'cmd': 'python3',
         'args': f"-m sofiax -c {sofiax_run_config} -p {neg_par} {pos_par}",
         'env': {}
-    })
+    }, interval=sleep_interval)
 
 
 if __name__ == '__main__':

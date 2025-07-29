@@ -49,7 +49,7 @@ def main(argv):
             'cmd': 'python3',
             'args': f"{config['subfits']['script']} -i {image} -o {subfits_image} -r",
             'env': {}
-        })
+        }, interval=sleep_interval)
 
     # Download HI4PI
     logger.info('HI4PI download')
@@ -68,7 +68,7 @@ def main(argv):
             'cmd': 'python3',
             'args': f"{config['hi4pi']['script']} -i {image} -o {hi4pi_image} -w {vizier_width}",
             'env': {}
-        })
+        }, interval=sleep_interval)
 
     # Generate miriad bash script
     logger.info('Generate miriad bash script')
@@ -84,9 +84,9 @@ def main(argv):
             'ram': 4,
             'kind': "headless",
             'cmd': 'python3',
-            'args': f"{config['miriad_script']['script']} -wd {workdir} -f {os.path.join(workdir, config['miriad_script']['output_filename'])} -o {os.path.join(workdir, config['miriad_script']['combination_filename'])} -w {subfits_image} -sd {os.path.join(workdir, config['hi4pi']['filename'])} -r {config['miriad_script']['region']}",
+            'args': f"{config['miriad_script']['script']} -wd {workdir} -f {os.path.join(workdir, config['miriad_script']['output_filename'])} -o {os.path.join(workdir, config['miriad_script']['combination_filename'])} -w {subfits_image} -sd {os.path.join(workdir, config['hi4pi']['filename'])} -r {config['miriad_script']['region']} -cw {config['miriad_script']['wallaby_spectral_range']}",
             'env': {}
-        })
+        }, interval=sleep_interval)
 
     # Run miriad preprocessing and combination
     logger.info('Single-dish WALLABY image preprocessing and combination')
@@ -99,7 +99,7 @@ def main(argv):
         'cmd': '/bin/sh',
         'args': miriad_script,
         'env': {}
-    })
+    }, interval=sleep_interval)
     return
 
 
