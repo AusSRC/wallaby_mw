@@ -20,8 +20,11 @@ Performs single dish and interferometer combination with all of the relevant pre
 ```mermaid
 
 flowchart TD
-    config["Pipeline configuration"]
-    wallaby["WALLABY Milky Way observation"]
+    config["Pipeline configuration (SBID 1, SBID 2)"]
+    casda1["CASDA download (SBID 1)"]
+    casda2["CASDA download (SBID 2)"]
+    mosaic["Mosaic SBID cubes
+     (reproject_and_coadd)"]
     hi4pi["HI4PI observation download"]
     subfits["Remove stokes dummy axis"]
     region["Determine region of WALLABY observation with HI4PI overlap"]
@@ -29,16 +32,24 @@ flowchart TD
     miriad["Miriad
      regridding + feathering"]
 
-    config --> hi4pi
-    config --> wallaby
-    wallaby --> hi4pi
-    wallaby --> subfits
+    config --> casda1
+    config --> casda2
+    casda1 --> mosaic
+    casda2 --> mosaic
+    mosaic --> hi4pi
+    mosaic --> subfits
     subfits --> region
     region --> miriad_script
     hi4pi --> miriad_script
     miriad_script --> miriad
-    wallaby --> velocity_range
+    mosaic --> velocity_range
 ```
+
+WALLABY fields are released to CASDA as two ASKAP SBIDs. `combine.py` downloads
+each SBID's Milky Way spectral cube from CASDA (`astroquery`, requires
+`CASDA_USERNAME`/`CASDA_PASSWORD`), mosaics them into a single WALLABY image
+(pure-Python `reproject` package, an alternative to askapsoft linmos), then
+continues into the existing HI4PI + Miriad combination steps unchanged.
 
 ### Source finding
 

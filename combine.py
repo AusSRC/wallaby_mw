@@ -26,12 +26,71 @@ def main(argv):
     sleep_interval = float(config['pipeline']['sleep_interval'])
 
     # Assert CANFAR paths exist
-    image = config['pipeline']['wallaby_image']
     workdir = config['pipeline']['workdir']
+    repo_dir = config['pipeline']['repo_dir']
+    python_image = config['pipeline']['python_image']
+    footprint_a = config['pipeline']['footprint_a']
+    footprint_b = config['pipeline']['footprint_b']
     canfar_get_images()
     if not client.isdir(path_to_vos(config['pipeline']['workdir'])):
         client.mkdir(path_to_vos(config['pipeline']['workdir']))
-    assert client.isfile(path_to_vos(image)), f"WALLABY image file does not exist in VO storage space {path_to_vos(image)}"
+
+    contsub = config['casda'].getboolean('contsub')
+
+    # Download footprint A from CASDA
+    logger.info(f'CASDA download {footprint_a}')
+    casda_image_a = os.path.join(workdir, config['casda']['filename_footprint_a'])
+    try:
+        client.isfile(path_to_vos(casda_image_a))
+        logger.info(f'CASDA image {casda_image_a} already exists. Skipping step')
+    except:
+        job('casda_download_footprint_a', {
+            'name': "casda-download-footprint-a",
+            'image': python_image,
+            'cores': 1,
+            'ram': 4,
+            'kind': "headless",
+            'cmd': 'python3',
+            'args': f"{os.path.join(repo_dir, config['casda']['script'])} -s {footprint_a} -o {casda_image_a}" + (' --contsub' if contsub else ''),
+            'env': {}
+        }, interval=sleep_interval)
+
+    # Download footprint B from CASDA
+    logger.info(f'CASDA download {footprint_b}')
+    casda_image_b = os.path.join(workdir, config['casda']['filename_footprint_b'])
+    try:
+        client.isfile(path_to_vos(casda_image_b))
+        logger.info(f'CASDA image {casda_image_b} already exists. Skipping step')
+    except:
+        job('casda_download_footprint_b', {
+            'name': "casda-download-footprint-b",
+            'image': python_image,
+            'cores': 1,
+            'ram': 4,
+            'kind': "headless",
+            'cmd': 'python3',
+            'args': f"{os.path.join(repo_dir, config['casda']['script'])} -s {footprint_b} -o {casda_image_b}" + (' --contsub' if contsub else ''),
+            'env': {}
+        }, interval=sleep_interval)
+
+    # Mosaic the two footprint cubes into a single WALLABY image
+    logger.info('Mosaicking footprint cubes')
+    image = os.path.join(workdir, config['mosaic']['filename'])
+    try:
+        client.isfile(path_to_vos(image))
+        logger.info(f'Mosaic image {image} already exists. Skipping step')
+    except:
+        job('mosaic', {
+            'name': "mosaic",
+            'image': python_image,
+            'cores': 4,
+            'ram': 16,
+            'kind': "headless",
+            'cmd': 'python3',
+            'args': f"{os.path.join(repo_dir, config['mosaic']['script'])} -a {casda_image_a} -b {casda_image_b} -o {image}",
+            'env': {}
+        }, interval=sleep_interval)
+    assert client.isfile(path_to_vos(image)), f"Mosaicked WALLABY image file does not exist in VO storage space {path_to_vos(image)}"
 
     # Subfits
     logger.info('Subfits')
@@ -42,12 +101,12 @@ def main(argv):
     except:
         job('subfits', {
             'name': "subfits",
-            'image': config['subfits']['image'],
+            'image': python_image,
             'cores': 4,
             'ram': 32,
             'kind': "headless",
             'cmd': 'python3',
-            'args': f"{config['subfits']['script']} -i {image} -o {subfits_image} -r",
+            'args': f"{os.path.join(repo_dir, config['subfits']['script'])} -i {image} -o {subfits_image} -r",
             'env': {}
         }, interval=sleep_interval)
 
@@ -61,12 +120,12 @@ def main(argv):
     except:
         job('hi4pi_download', {
             'name': "hi4pi-download",
-            'image': config['hi4pi']['image'],
+            'image': python_image,
             'cores': 1,
             'ram': 4,
             'kind': "headless",
             'cmd': 'python3',
-            'args': f"{config['hi4pi']['script']} -i {image} -o {hi4pi_image} -w {vizier_width}",
+            'args': f"{os.path.join(repo_dir, config['hi4pi']['script'])} -i {image} -o {hi4pi_image} -w {vizier_width}",
             'env': {}
         }, interval=sleep_interval)
 
