@@ -13,6 +13,7 @@ import logging
 from argparse import ArgumentParser
 
 import keyring
+from keyrings.alt.file import PlaintextKeyring
 from astroquery.casda import Casda
 from astroquery.utils.tap.core import TapPlus
 
@@ -21,6 +22,7 @@ logging.basicConfig(level=logging.INFO)
 
 TAP_URL = 'https://casda.csiro.au/casda_vo_tools/tap'
 KEYRING_SERVICE = 'astroquery:casda.csiro.au'
+DEFAULT_KEYRING_FILE = '~/.casda_keyring'
 
 
 def build_adql_query(sbid):
@@ -54,9 +56,28 @@ def select_milkyway_row(table, contsub=False):
     return matches[0]
 
 
-def authenticate(username, password=None):
-    if password:
-        keyring.set_password(KEYRING_SERVICE, username, password)
+def resolve_keyring_path(keyring_file):
+    """Expand a configured keyring file path, falling back to DEFAULT_KEYRING_FILE."""
+    return os.path.abspath(os.path.expanduser(keyring_file or DEFAULT_KEYRING_FILE))
+
+
+def authenticate(username, password, keyring_file=None):
+    """Authenticate with CASDA, persisting the password in a plaintext keyring file.
+
+    The default OS keyring backend has no working implementation in a
+    headless CANFAR container (no dbus/keychain), so `Casda.login()`'s
+    normal keyring/getpass password lookup would fail. This points
+    `keyring` at an explicit PlaintextKeyring file instead - stored under
+    the user's CANFAR home directory (`keyring_file`) so it persists
+    across job containers.
+    """
+    keyring_path = resolve_keyring_path(keyring_file)
+    os.makedirs(os.path.dirname(keyring_path), exist_ok=True)
+    backend = PlaintextKeyring()
+    backend.file_path = keyring_path
+    keyring.set_keyring(backend)
+    keyring.set_password(KEYRING_SERVICE, username, password)
+
     authenticated = Casda.login(username=username)
     if not authenticated:
         raise Exception(f'CASDA authentication failed for user {username}')
@@ -99,8 +120,10 @@ def main(argv):
 
     username = os.environ.get('CASDA_USERNAME')
     password = os.environ.get('CASDA_PASSWORD')
+    keyring_file = os.environ.get('CASDA_KEYRING_FILE')
     assert username, 'CASDA_USERNAME environment variable must be set'
-    authenticate(username, password)
+    assert password, 'CASDA_PASSWORD environment variable must be set'
+    authenticate(username, password, keyring_file=keyring_file)
 
     if os.path.exists(args.output):
         logging.info(f'File {args.output} already exists. Skipping download.')

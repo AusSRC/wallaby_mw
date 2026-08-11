@@ -75,6 +75,34 @@ def mosaic_cube(data1, wcs1, data2, wcs2):
     return cube_out, wcs_out
 
 
+def patch_celestial_header(header, celestial_wcs, shape_out):
+    """Replace only the celestial (RA/Dec) axis keywords in a FITS header.
+
+    `wcs_out.to_header()` alone only describes 2 axes, so writing it
+    directly onto 3D/4D cube data silently drops the spectral/stokes WCS
+    (CTYPE3/4, CRVAL3/4, ...). This keeps every other axis from the
+    original header untouched and only overwrites axes 1/2 with the new
+    mosaic frame, dropping any rotation terms since
+    find_optimal_celestial_wcs returns an unrotated frame.
+    """
+    header = header.copy()
+    ny, nx = shape_out
+    header['NAXIS1'] = nx
+    header['NAXIS2'] = ny
+    header['CTYPE1'] = celestial_wcs.wcs.ctype[0]
+    header['CTYPE2'] = celestial_wcs.wcs.ctype[1]
+    header['CRVAL1'] = celestial_wcs.wcs.crval[0]
+    header['CRVAL2'] = celestial_wcs.wcs.crval[1]
+    header['CRPIX1'] = celestial_wcs.wcs.crpix[0]
+    header['CRPIX2'] = celestial_wcs.wcs.crpix[1]
+    header['CDELT1'] = celestial_wcs.wcs.cdelt[0]
+    header['CDELT2'] = celestial_wcs.wcs.cdelt[1]
+    for key in ('PC1_1', 'PC1_2', 'PC2_1', 'PC2_2', 'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2'):
+        if key in header:
+            del header[key]
+    return header
+
+
 def main(argv):
     parser = ArgumentParser()
     parser.add_argument('-a', '--image1', type=str, required=True, help='First SBID cube (fits)')
@@ -98,8 +126,7 @@ def main(argv):
     else:
         mosaic, wcs_out = mosaic_2d(data1, wcs1, data2, wcs2)
 
-    header_out = wcs_out.to_header()
-    header_out['BUNIT'] = header1.get('BUNIT', '')
+    header_out = patch_celestial_header(header1, wcs_out, mosaic.shape[-2:])
     fits.writeto(args.output, mosaic, header=header_out, overwrite=True)
     logging.info(f'Wrote mosaic to {args.output}')
 

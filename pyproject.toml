@@ -12,6 +12,7 @@ dependencies = [
     "reproject",
     "wget",
     "keyring",
+    "keyrings.alt",
 ]
 
 [build-system]

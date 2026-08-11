@@ -36,14 +36,21 @@ def main(argv):
         client.mkdir(path_to_vos(config['pipeline']['workdir']))
 
     contsub = config['casda'].getboolean('contsub')
+    casda_username = config['casda'].get('username') or os.environ.get('CASDA_USERNAME')
+    casda_password = config['casda'].get('password') or os.environ.get('CASDA_PASSWORD')
+    casda_keyring_file = config['casda'].get('keyring_file') or None
+    assert casda_username, 'CASDA username must be set via config.ini [casda] username or CASDA_USERNAME env var'
+    assert casda_password, 'CASDA password must be set via config.ini [casda] password or CASDA_PASSWORD env var'
+    casda_env = {'CASDA_USERNAME': casda_username, 'CASDA_PASSWORD': casda_password}
+    if casda_keyring_file:
+        casda_env['CASDA_KEYRING_FILE'] = casda_keyring_file
 
     # Download footprint A from CASDA
     logger.info(f'CASDA download {footprint_a}')
     casda_image_a = os.path.join(workdir, config['casda']['filename_footprint_a'])
-    try:
-        client.isfile(path_to_vos(casda_image_a))
+    if client.isfile(path_to_vos(casda_image_a)):
         logger.info(f'CASDA image {casda_image_a} already exists. Skipping step')
-    except:
+    else:
         job('casda_download_footprint_a', {
             'name': "casda-download-footprint-a",
             'image': python_image,
@@ -52,16 +59,15 @@ def main(argv):
             'kind': "headless",
             'cmd': 'python3',
             'args': f"{os.path.join(repo_dir, config['casda']['script'])} -s {footprint_a} -o {casda_image_a}" + (' --contsub' if contsub else ''),
-            'env': {}
+            'env': casda_env
         }, interval=sleep_interval)
 
     # Download footprint B from CASDA
     logger.info(f'CASDA download {footprint_b}')
     casda_image_b = os.path.join(workdir, config['casda']['filename_footprint_b'])
-    try:
-        client.isfile(path_to_vos(casda_image_b))
+    if client.isfile(path_to_vos(casda_image_b)):
         logger.info(f'CASDA image {casda_image_b} already exists. Skipping step')
-    except:
+    else:
         job('casda_download_footprint_b', {
             'name': "casda-download-footprint-b",
             'image': python_image,
@@ -70,16 +76,15 @@ def main(argv):
             'kind': "headless",
             'cmd': 'python3',
             'args': f"{os.path.join(repo_dir, config['casda']['script'])} -s {footprint_b} -o {casda_image_b}" + (' --contsub' if contsub else ''),
-            'env': {}
+            'env': casda_env
         }, interval=sleep_interval)
 
     # Mosaic the two footprint cubes into a single WALLABY image
     logger.info('Mosaicking footprint cubes')
     image = os.path.join(workdir, config['mosaic']['filename'])
-    try:
-        client.isfile(path_to_vos(image))
+    if client.isfile(path_to_vos(image)):
         logger.info(f'Mosaic image {image} already exists. Skipping step')
-    except:
+    else:
         job('mosaic', {
             'name': "mosaic",
             'image': python_image,
@@ -95,10 +100,9 @@ def main(argv):
     # Subfits
     logger.info('Subfits')
     subfits_image = os.path.join(workdir, config['subfits']['filename'])
-    try:
-        client.isfile(path_to_vos(subfits_image))
+    if client.isfile(path_to_vos(subfits_image)):
         logger.info(f'Subfits image {subfits_image} already exists. Skipping step')
-    except:
+    else:
         job('subfits', {
             'name': "subfits",
             'image': python_image,
@@ -114,10 +118,9 @@ def main(argv):
     logger.info('HI4PI download')
     hi4pi_image = os.path.join(workdir, config['hi4pi']['filename'])
     vizier_width = float(config['hi4pi']['vizier_query_width'])
-    try:
-        client.isfile(path_to_vos(hi4pi_image))
+    if client.isfile(path_to_vos(hi4pi_image)):
         logger.info(f'HI4PI image {hi4pi_image} already exists. Skipping step')
-    except:
+    else:
         job('hi4pi_download', {
             'name': "hi4pi-download",
             'image': python_image,
@@ -132,10 +135,9 @@ def main(argv):
     # Generate miriad bash script
     logger.info('Generate miriad bash script')
     miriad_script = os.path.join(workdir, config['miriad_script']['output_filename'])
-    try:
-        client.isfile(path_to_vos(miriad_script))
+    if client.isfile(path_to_vos(miriad_script)):
         logger.info('Miriad script exists. Skipping step')
-    except:
+    else:
         job('miraid_script', {
             'name': "miriad-script",
             'image': config['miriad_script']['image'],

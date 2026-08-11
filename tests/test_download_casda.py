@@ -1,7 +1,7 @@
 import pytest
 from astropy.table import Table
 
-from download_casda import build_adql_query, select_milkyway_row
+from download_casda import build_adql_query, select_milkyway_row, resolve_keyring_path
 
 
 def test_build_adql_query_filters_by_sbid():
@@ -58,3 +58,21 @@ def test_select_milkyway_row_raises_when_ambiguous():
     ])
     with pytest.raises(Exception):
         select_milkyway_row(table, contsub=False)
+
+
+def test_resolve_keyring_path_expands_user_home_default():
+    path = resolve_keyring_path(None)
+    assert path.startswith('/')
+    assert '~' not in path
+    assert path.endswith('.casda_keyring')
+
+
+def test_resolve_keyring_path_expands_a_given_path():
+    path = resolve_keyring_path('~/canfar/creds/.casda_keyring')
+    assert path.startswith('/')
+    assert path.endswith('canfar/creds/.casda_keyring')
+
+
+def test_resolve_keyring_path_leaves_an_absolute_path_untouched():
+    path = resolve_keyring_path('/arc/home/axshen/.casda_keyring')
+    assert path == '/arc/home/axshen/.casda_keyring'
