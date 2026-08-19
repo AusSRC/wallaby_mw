@@ -13,6 +13,8 @@ CANFAR_SESSION_URL = 'https://ws-uv.canfar.net/skaha/v1/session'
 # CANFAR occasionally accepts a connection and then never answers. Without a
 # timeout the flow blocks forever while the remote job keeps running.
 REQUEST_TIMEOUT = 60
+# Consecutive failed status polls tolerated before giving up on a session.
+MAX_POLL_FAILURES = 120
 RUNNING_STATES = ['Pending', 'Running', 'Terminating']
 COMPLETE_STATES = ['Succeeded', 'Completed']
 FAILED_STATES = ['Failed']
@@ -69,6 +71,19 @@ def info_canfar_session(id, logs=False):
     return r
 
 
+def _session_logs(session_id, logger):
+    """Fetch a session's logs, tolerating a failure to retrieve them.
+
+    Only ever used to report what a job did, so losing the logs must not
+    replace the real outcome with a request error.
+    """
+    try:
+        return info_canfar_session(session_id, logs=True).text
+    except Exception as e:
+        logger.exception(e)
+        return f'<logs unavailable for session {session_id}: {e}>'
+
+
 @task(task_run_name='{name}')
 def job(name, params, interval=10, *args, **kwargs):
     """Job wrapper for CANFAR containers
@@ -79,25 +94,37 @@ def job(name, params, interval=10, *args, **kwargs):
     completed = False
     session_id = create_canfar_session(params).strip('\n')
     logger.info(f'Session: {session_id}')
+    poll_failures = 0
     while not completed:
-        res = info_canfar_session(session_id, logs=False)
         try:
+            # The request belongs inside the try: CANFAR times out or answers
+            # with an HTML error page often enough that a failed poll must not
+            # end the task, since the job itself is running server-side and is
+            # unaffected. Sleeping here also stops the retry from spinning on
+            # the API for the length of an outage.
+            res = info_canfar_session(session_id, logs=False)
             status = json.loads(res.text)['status']
         except Exception as e:
+            poll_failures += 1
             logger.exception(e)
+            if poll_failures > MAX_POLL_FAILURES:
+                raise Exception(
+                    f'Giving up on session {session_id} after {poll_failures} '
+                    'consecutive polling failures'
+                )
+            time.sleep(interval)
             continue
+
+        poll_failures = 0
 
         completed = status in COMPLETE_STATES
         failed = status in FAILED_STATES
         if failed:
-            logs = info_canfar_session(session_id, logs=True)
-            logger.error(logs.content)
-            raise Exception(f'Job failed {logs.text}')
+            raise Exception(f'Job failed {_session_logs(session_id, logger)}')
 
         time.sleep(interval)
         logger.info(f'Job {session_id} {status}')
 
     # Logging to stdout
-    res = info_canfar_session(session_id, logs=True)
-    logger.info(res.text)
+    logger.info(_session_logs(session_id, logger))
     return
