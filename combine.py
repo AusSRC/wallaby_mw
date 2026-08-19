@@ -86,9 +86,8 @@ def main(argv):
 
     # Download footprint A from CASDA
     logger.info(f'CASDA download {footprint_a}')
-    workdir_files = client.listdir(path_to_vos(workdir))
     casda_image_a = os.path.join(workdir, config['casda']['filename_footprint_a'])
-    if config['casda']['filename_footprint_a'] in workdir_files:
+    if vos_file_exists(client, casda_image_a):
         logger.info(f'CASDA image {casda_image_a} already exists. Skipping step')
     else:
         job('casda_download_footprint_a', {
@@ -105,7 +104,7 @@ def main(argv):
     # Download footprint B from CASDA
     logger.info(f'CASDA download {footprint_b}')
     casda_image_b = os.path.join(workdir, config['casda']['filename_footprint_b'])
-    if config['casda']['filename_footprint_b'] in workdir_files:
+    if vos_file_exists(client, casda_image_b):
         logger.info(f'CASDA image {casda_image_b} already exists. Skipping step')
     else:
         job('casda_download_footprint_b', {
@@ -122,7 +121,7 @@ def main(argv):
     # Mosaic the two footprint cubes into a single WALLABY image
     logger.info('Mosaicking footprint cubes')
     image = os.path.join(workdir, config['mosaic']['filename'])
-    if config['mosaic']['filename'] in workdir_files:
+    if vos_file_exists(client, image):
         logger.info(f'Mosaic image {image} already exists. Skipping step')
     else:
         job('mosaic', {
@@ -135,12 +134,12 @@ def main(argv):
             'args': f"{os.path.join(repo_dir, config['mosaic']['script'])} -a {casda_image_a} -b {casda_image_b} -o {image}",
             'env': {}
         }, interval=sleep_interval)
-    assert client.isfile(path_to_vos(image)), f"Mosaicked WALLABY image file does not exist in VO storage space {path_to_vos(image)}"
+    assert vos_file_exists(client, image), f"Mosaicked WALLABY image file does not exist in VO storage space {path_to_vos(image)}"
 
     # Subfits
     logger.info('Subfits')
     subfits_image = os.path.join(workdir, config['subfits']['filename'])
-    if config['subfits']['filename'] in workdir_files:
+    if vos_file_exists(client, subfits_image):
         logger.info(f'Subfits image {subfits_image} already exists. Skipping step')
     else:
         job('subfits', {
@@ -158,7 +157,7 @@ def main(argv):
     logger.info('HI4PI download')
     hi4pi_image = os.path.join(workdir, config['hi4pi']['filename'])
     vizier_width = float(config['hi4pi']['vizier_query_width'])
-    if client.isfile(path_to_vos(hi4pi_image)):
+    if vos_file_exists(client, hi4pi_image):
         logger.info(f'HI4PI image {hi4pi_image} already exists. Skipping step')
     else:
         job('hi4pi_download', {
@@ -175,7 +174,7 @@ def main(argv):
     # Generate miriad bash script
     logger.info('Generate miriad bash script')
     miriad_script = os.path.join(workdir, config['miriad_script']['output_filename'])
-    if client.isfile(path_to_vos(miriad_script)):
+    if vos_file_exists(client, miriad_script):
         logger.info('Miriad script exists. Skipping step')
     else:
         job('miraid_script', {

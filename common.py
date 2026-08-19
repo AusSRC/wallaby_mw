@@ -28,6 +28,18 @@ def path_to_vos(path):
     return vos_path
 
 
+def vos_file_exists(client, path):
+    """Check whether a file exists in CANFAR storage.
+
+    vos raises NotFoundException from isfile() for a node that is not there
+    rather than returning False, so listing the parent directory and testing
+    for membership is the reliable check. Listing fresh each time also picks
+    up files written by earlier steps of the same run.
+    """
+    directory, filename = os.path.split(path)
+    return filename in client.listdir(path_to_vos(directory))
+
+
 def canfar_get_images(type='headless'):
     logger = get_run_logger()
     cert = os.getenv('CADC_CERTIFICATE', CADC_DEFAULT_CERTIFICATE)
