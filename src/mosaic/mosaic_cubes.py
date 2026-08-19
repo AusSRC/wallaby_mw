@@ -23,18 +23,24 @@ from reproject.mosaicking import find_optimal_celestial_wcs, reproject_and_coadd
 logging.basicConfig(level=logging.INFO)
 
 
-def mosaic_2d(data1, wcs1, data2, wcs2):
-    """Mosaic two 2D images (with celestial WCS) onto a common optimal frame."""
-    if data1.ndim != 2 or data2.ndim != 2:
-        raise ValueError('mosaic_2d requires two 2D arrays')
-
-    wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2)])
+def _reproject_plane(data1, wcs1, data2, wcs2, wcs_out, shape_out):
+    """Coadd one pair of 2D planes onto an already-solved output frame."""
     combined, _ = reproject_and_coadd(
         [(data1, wcs1), (data2, wcs2)],
         wcs_out,
         shape_out=shape_out,
         reproject_function=reproject_interp,
     )
+    return combined
+
+
+def mosaic_2d(data1, wcs1, data2, wcs2):
+    """Mosaic two 2D images (with celestial WCS) onto a common optimal frame."""
+    if data1.ndim != 2 or data2.ndim != 2:
+        raise ValueError('mosaic_2d requires two 2D arrays')
+
+    wcs_out, shape_out = find_optimal_celestial_wcs([(data1, wcs1), (data2, wcs2)])
+    combined = _reproject_plane(data1, wcs1, data2, wcs2, wcs_out, shape_out)
     return combined, wcs_out
 
 
@@ -75,6 +81,63 @@ def mosaic_cube(data1, wcs1, data2, wcs2):
     return cube_out, wcs_out
 
 
+def mosaic_cube_to_file(data1, wcs1, data2, wcs2, output_file, header):
+    """Mosaic two spectral cubes plane by plane, streaming the result to disk.
+
+    A combined WALLABY footprint pair runs to tens of GB - far more than a job
+    container has - so planes are written sequentially with StreamingHDU rather
+    than accumulated in one array the way `mosaic_cube` does.
+    """
+    if data1.ndim not in (3, 4) or data2.ndim not in (3, 4):
+        raise ValueError('mosaic_cube requires two 3D or 4D arrays')
+    if data1.ndim != data2.ndim:
+        raise ValueError(
+            f'Dimensionality mismatch: {data1.ndim}D vs {data2.ndim}D'
+        )
+    if data1.shape[:-2] != data2.shape[:-2]:
+        raise ValueError(
+            f'Leading axis shape mismatch: {data1.shape[:-2]} vs {data2.shape[:-2]}'
+        )
+
+    celestial1 = wcs1.celestial
+    celestial2 = wcs2.celestial
+
+    # Every plane shares one output frame, so solve it once instead of
+    # re-deriving it per plane the way mosaic_2d would.
+    wcs_out, shape_out = find_optimal_celestial_wcs(
+        [(data1.shape[-2:], celestial1), (data2.shape[-2:], celestial2)]
+    )
+
+    leading_shape = data1.shape[:-2]
+    out_shape = tuple(leading_shape) + tuple(shape_out)
+    total = int(np.prod(leading_shape))
+
+    header_out = patch_celestial_header(header, wcs_out, shape_out)
+    header_out['BITPIX'] = -32
+    header_out['NAXIS'] = len(out_shape)
+    for axis, length in enumerate(reversed(out_shape), start=1):
+        header_out[f'NAXIS{axis}'] = length
+
+    if os.path.exists(output_file):
+        os.remove(output_file)
+
+    # np.ndindex walks the leading axes in C order, which is the order FITS
+    # stores planes in, so sequential writes land in the right place.
+    stream = fits.StreamingHDU(output_file, header_out)
+    try:
+        for n, idx in enumerate(np.ndindex(leading_shape), start=1):
+            plane = _reproject_plane(
+                data1[idx], celestial1, data2[idx], celestial2, wcs_out, shape_out
+            )
+            stream.write(np.asarray(plane, dtype=np.float32))
+            if n % 25 == 0 or n == total:
+                logging.info(f'Mosaicked plane {n}/{total}')
+    finally:
+        stream.close()
+
+    return output_file
+
+
 def patch_celestial_header(header, celestial_wcs, shape_out):
     """Replace only the celestial (RA/Dec) axis keywords in a FITS header.
 
@@ -113,21 +176,23 @@ def main(argv):
     assert os.path.exists(args.image1), f'Image does not exist: {args.image1}'
     assert os.path.exists(args.image2), f'Image does not exist: {args.image2}'
 
+    # The work stays inside the `with` block: hdul[0].data is memory mapped and
+    # is only readable while the file is open.
     with fits.open(args.image1) as hdul1, fits.open(args.image2) as hdul2:
-        data1 = hdul1[0].data
-        wcs1 = WCS(hdul1[0].header)
         header1 = hdul1[0].header
+        data1 = hdul1[0].data
+        wcs1 = WCS(header1)
         data2 = hdul2[0].data
         wcs2 = WCS(hdul2[0].header)
 
-    logging.info(f'Mosaicking {args.image1} and {args.image2}')
-    if data1.ndim >= 3:
-        mosaic, wcs_out = mosaic_cube(data1, wcs1, data2, wcs2)
-    else:
-        mosaic, wcs_out = mosaic_2d(data1, wcs1, data2, wcs2)
+        logging.info(f'Mosaicking {args.image1} and {args.image2}')
+        if data1.ndim >= 3:
+            mosaic_cube_to_file(data1, wcs1, data2, wcs2, args.output, header1)
+        else:
+            mosaic, wcs_out = mosaic_2d(data1, wcs1, data2, wcs2)
+            header_out = patch_celestial_header(header1, wcs_out, mosaic.shape[-2:])
+            fits.writeto(args.output, mosaic, header=header_out, overwrite=True)
 
-    header_out = patch_celestial_header(header1, wcs_out, mosaic.shape[-2:])
-    fits.writeto(args.output, mosaic, header=header_out, overwrite=True)
     logging.info(f'Wrote mosaic to {args.output}')
 
 
