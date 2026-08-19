@@ -31,7 +31,46 @@ def main(argv):
     python_image = config['pipeline']['python_image']
     footprint_a = config['pipeline']['footprint_a']
     footprint_b = config['pipeline']['footprint_b']
-    canfar_get_images()
+    repo_url = config['pipeline']['repo_url']
+    repo_branch = config['pipeline']['repo_branch']
+
+    # Make sure the pipeline repository is present and current on CANFAR. Every
+    # Python step below runs a script out of repo_dir inside python_image.
+    if not client.isdir(path_to_vos(repo_dir)):
+        logger.info(f'Cloning {repo_url} ({repo_branch}) to {repo_dir}')
+        job('clone_repo', {
+            'name': "clone-repo",
+            'image': python_image,
+            'cores': 1,
+            'ram': 2,
+            'kind': "headless",
+            'cmd': 'git',
+            'args': f'clone -b {repo_branch} {repo_url} {repo_dir}',
+            'env': {}
+        }, interval=sleep_interval)
+    else:
+        logger.info(f'Updating {repo_dir} to origin/{repo_branch}')
+        job('fetch_repo', {
+            'name': "fetch-repo",
+            'image': python_image,
+            'cores': 1,
+            'ram': 2,
+            'kind': "headless",
+            'cmd': 'git',
+            'args': f'-C {repo_dir} fetch origin {repo_branch}',
+            'env': {}
+        }, interval=sleep_interval)
+        job('reset_repo', {
+            'name': "reset-repo",
+            'image': python_image,
+            'cores': 1,
+            'ram': 2,
+            'kind': "headless",
+            'cmd': 'git',
+            'args': f'-C {repo_dir} reset --hard FETCH_HEAD',
+            'env': {}
+        }, interval=sleep_interval)
+
     if not client.isdir(path_to_vos(config['pipeline']['workdir'])):
         client.mkdir(path_to_vos(config['pipeline']['workdir']))
 
@@ -47,8 +86,9 @@ def main(argv):
 
     # Download footprint A from CASDA
     logger.info(f'CASDA download {footprint_a}')
+    workdir_files = client.listdir(path_to_vos(workdir))
     casda_image_a = os.path.join(workdir, config['casda']['filename_footprint_a'])
-    if client.isfile(path_to_vos(casda_image_a)):
+    if config['casda']['filename_footprint_a'] in workdir_files:
         logger.info(f'CASDA image {casda_image_a} already exists. Skipping step')
     else:
         job('casda_download_footprint_a', {
@@ -65,7 +105,7 @@ def main(argv):
     # Download footprint B from CASDA
     logger.info(f'CASDA download {footprint_b}')
     casda_image_b = os.path.join(workdir, config['casda']['filename_footprint_b'])
-    if client.isfile(path_to_vos(casda_image_b)):
+    if config['casda']['filename_footprint_b'] in workdir_files:
         logger.info(f'CASDA image {casda_image_b} already exists. Skipping step')
     else:
         job('casda_download_footprint_b', {
@@ -82,7 +122,7 @@ def main(argv):
     # Mosaic the two footprint cubes into a single WALLABY image
     logger.info('Mosaicking footprint cubes')
     image = os.path.join(workdir, config['mosaic']['filename'])
-    if client.isfile(path_to_vos(image)):
+    if config['mosaic']['filename'] in workdir_files:
         logger.info(f'Mosaic image {image} already exists. Skipping step')
     else:
         job('mosaic', {
@@ -100,7 +140,7 @@ def main(argv):
     # Subfits
     logger.info('Subfits')
     subfits_image = os.path.join(workdir, config['subfits']['filename'])
-    if client.isfile(path_to_vos(subfits_image)):
+    if config['subfits']['filename'] in workdir_files:
         logger.info(f'Subfits image {subfits_image} already exists. Skipping step')
     else:
         job('subfits', {

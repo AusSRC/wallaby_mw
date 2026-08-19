@@ -79,6 +79,10 @@ def authenticate(username, password, keyring_file=None):
     keyring.set_password(KEYRING_SERVICE, username, password)
 
     authenticated = Casda.login(username=username)
+    if authenticated is None:
+        # Casda.login() returns None regardless of outcome; the instance records
+        # the real result on _authenticated.
+        authenticated = getattr(Casda, '_authenticated', False)
     if not authenticated:
         raise Exception(f'CASDA authentication failed for user {username}')
 

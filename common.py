@@ -8,10 +8,10 @@ from prefect import task, flow, get_run_logger
 
 
 CADC_DEFAULT_CERTIFICATE = '/Users/she393/.ssl/cadcproxy.pem'
-CANFAR_IMAGE_URL = 'https://ws-uv.canfar.net/skaha/v0/image'
-CANFAR_SESSION_URL = 'https://ws-uv.canfar.net/skaha/v0/session'
+CANFAR_IMAGE_URL = 'https://ws-uv.canfar.net/skaha/v1/image'
+CANFAR_SESSION_URL = 'https://ws-uv.canfar.net/skaha/v1/session'
 RUNNING_STATES = ['Pending', 'Running', 'Terminating']
-COMPLETE_STATES = ['Succeeded']
+COMPLETE_STATES = ['Succeeded', 'Completed']
 FAILED_STATES = ['Failed']
 
 
@@ -30,12 +30,20 @@ def canfar_get_images(type='headless'):
     url = f'{CANFAR_IMAGE_URL}?type={type}'
     r = requests.get(url, cert=cert)
     logger.info(r.status_code)
+    print(r.text)
     return json.loads(r.text)
 
 
 def create_canfar_session(params):
     logger = get_run_logger()
     cert = os.getenv('CADC_CERTIFICATE', CADC_DEFAULT_CERTIFICATE)
+
+    # Skaha expects repeated env=KEY=VALUE parameters. A dict is form-encoded
+    # to its keys alone, silently dropping every value.
+    params = dict(params)
+    env = params.get('env')
+    if isinstance(env, dict):
+        params['env'] = [f'{k}={v}' for k, v in env.items()]
 
     r = requests.post(CANFAR_SESSION_URL, data=params, cert=cert)
     if r.status_code != 200:
