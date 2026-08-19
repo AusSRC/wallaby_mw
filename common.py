@@ -10,6 +10,9 @@ from prefect import task, flow, get_run_logger
 CADC_DEFAULT_CERTIFICATE = '/Users/she393/.ssl/cadcproxy.pem'
 CANFAR_IMAGE_URL = 'https://ws-uv.canfar.net/skaha/v1/image'
 CANFAR_SESSION_URL = 'https://ws-uv.canfar.net/skaha/v1/session'
+# CANFAR occasionally accepts a connection and then never answers. Without a
+# timeout the flow blocks forever while the remote job keeps running.
+REQUEST_TIMEOUT = 60
 RUNNING_STATES = ['Pending', 'Running', 'Terminating']
 COMPLETE_STATES = ['Succeeded', 'Completed']
 FAILED_STATES = ['Failed']
@@ -28,7 +31,7 @@ def canfar_get_images(type='headless'):
     cert = os.getenv('CADC_CERTIFICATE', CADC_DEFAULT_CERTIFICATE)
 
     url = f'{CANFAR_IMAGE_URL}?type={type}'
-    r = requests.get(url, cert=cert)
+    r = requests.get(url, cert=cert, timeout=REQUEST_TIMEOUT)
     logger.info(r.status_code)
     print(r.text)
     return json.loads(r.text)
@@ -45,7 +48,7 @@ def create_canfar_session(params):
     if isinstance(env, dict):
         params['env'] = [f'{k}={v}' for k, v in env.items()]
 
-    r = requests.post(CANFAR_SESSION_URL, data=params, cert=cert)
+    r = requests.post(CANFAR_SESSION_URL, data=params, cert=cert, timeout=REQUEST_TIMEOUT)
     if r.status_code != 200:
         logger.error(r.status_code)
         raise Exception(f'Request failed {r.content}')
@@ -59,7 +62,7 @@ def info_canfar_session(id, logs=False):
     url = f'{CANFAR_SESSION_URL}/{id}'
     if logs:
         url = f'{url}?view=logs'
-    r = requests.get(url, cert=cert)
+    r = requests.get(url, cert=cert, timeout=REQUEST_TIMEOUT)
     if r.status_code != 200:
         logger.error(r.status_code)
         logger.error(r.content)
