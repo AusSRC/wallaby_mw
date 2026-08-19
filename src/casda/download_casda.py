@@ -108,7 +108,17 @@ def download_milkyway_cube(sbid, output_file, contsub=False):
 
     if not downloaded:
         raise Exception('CASDA download returned no files')
-    os.replace(downloaded[0], output_file)
+
+    # CASDA stages the cube alongside a small .checksum sidecar, in no
+    # guaranteed order, so the first entry is not reliably the cube.
+    expected = str(row['filename'])
+    cubes = [f for f in downloaded if os.path.basename(f) == expected]
+    if not cubes:
+        cubes = [f for f in downloaded if not f.endswith('.checksum')]
+    if not cubes:
+        raise Exception(f'CASDA download returned no cube file for SBID {sbid}: {downloaded}')
+
+    os.replace(cubes[0], output_file)
     return output_file
 
 
