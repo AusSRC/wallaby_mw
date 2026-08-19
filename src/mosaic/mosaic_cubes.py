@@ -81,6 +81,35 @@ def mosaic_cube(data1, wcs1, data2, wcs2):
     return cube_out, wcs_out
 
 
+def _as_primary_header(header, shape, bitpix=-32):
+    """Return `header` rebuilt as a valid primary header describing `shape`.
+
+    StreamingHDU only writes the header it is given as the primary HDU when
+    that header declares SIMPLE; otherwise it silently prepends an empty
+    primary and the data lands in an extension, where the downstream steps
+    do not look for it. Rebuilding guarantees the mandatory keywords are
+    present and in the order the standard requires.
+    """
+    source = header.copy()
+    structural = ['SIMPLE', 'BITPIX', 'NAXIS', 'XTENSION', 'PCOUNT', 'GCOUNT', 'EXTEND']
+    structural += [f'NAXIS{i}' for i in range(1, 10)]
+    for key in structural:
+        if key in source:
+            del source[key]
+
+    out = fits.Header()
+    out.set('SIMPLE', True, 'conforms to FITS standard')
+    out.set('BITPIX', bitpix, 'array data type')
+    out.set('NAXIS', len(shape), 'number of array dimensions')
+    for axis, length in enumerate(reversed(shape), start=1):
+        out.set(f'NAXIS{axis}', length)
+    out.set('EXTEND', True)
+    for card in source.cards:
+        if card.keyword:
+            out.append(card, end=True)
+    return out
+
+
 def mosaic_cube_to_file(data1, wcs1, data2, wcs2, output_file, header):
     """Mosaic two spectral cubes plane by plane, streaming the result to disk.
 
@@ -112,11 +141,9 @@ def mosaic_cube_to_file(data1, wcs1, data2, wcs2, output_file, header):
     out_shape = tuple(leading_shape) + tuple(shape_out)
     total = int(np.prod(leading_shape))
 
-    header_out = patch_celestial_header(header, wcs_out, shape_out)
-    header_out['BITPIX'] = -32
-    header_out['NAXIS'] = len(out_shape)
-    for axis, length in enumerate(reversed(out_shape), start=1):
-        header_out[f'NAXIS{axis}'] = length
+    header_out = _as_primary_header(
+        patch_celestial_header(header, wcs_out, shape_out), out_shape
+    )
 
     if os.path.exists(output_file):
         os.remove(output_file)
