@@ -21,7 +21,10 @@ from configparser import ConfigParser
 
 logging.basicConfig(level=logging.INFO)
 
-URL = 'https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
+# cdsarc.u-strasbg.fr is CDS's retired hostname and now presents a
+# self-signed certificate that expired in August 2023, so every download
+# from it fails TLS verification.
+URL = 'https://cdsarc.cds.unistra.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
 CATALOG = 'J/A+A/594/A116/cubes_eq'
 
 

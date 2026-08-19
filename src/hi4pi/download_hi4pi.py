@@ -11,7 +11,7 @@ from astropy.io import fits
 from astroquery.vizier import Vizier
 
 
-URL = 'https://cdsarc.u-strasbg.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
+URL = 'https://cdsarc.cds.unistra.fr/ftp/J/A+A/594/A116/CUBES/EQ2000/SIN/'
 CATALOG = 'J/A+A/594/A116/cubes_eq'
 
 
